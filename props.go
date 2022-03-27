@@ -1,5 +1,9 @@
 package main
 
+type IProps interface {
+	Keyed
+}
+
 type Keyed interface {
 	GetKey() *string
 }
@@ -21,6 +25,10 @@ func Key(key string) WithKey {
 
 func (k WithKey) GetKey() *string {
 	return k.Key
+}
+
+func Children(children []AnyNode) WithChildren {
+	return WithChildren{children}
 }
 
 type WithChildren struct {

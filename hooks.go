@@ -110,5 +110,3 @@ func Some[T any](value T) *T {
 func UseCallback[T any, Deps comparable](fn T, dependencies Deps) T {
 	return UseMemo(func() T { return fn }, dependencies)
 }
-
-type MaybeString string

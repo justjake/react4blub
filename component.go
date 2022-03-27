@@ -1,23 +1,17 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
-type Component[Props any] interface {
+type Component[Props IProps] interface {
 	Render(Props Props) AnyNode
 	Node(Props Props, children ...AnyNode) AnyNode
 }
 
-type AnyNode interface {
-	key() *string
-	invokeRender() AnyNode
-	component() any
-}
-
-func FunctionComponent[Props any](fn ComponentFunc[Props]) ComponentFunc[Props] {
-	return ComponentFunc[Props](fn)
-}
-
-type ComponentFunc[Props any] func(props Props) AnyNode
+// ComponentFunc - user defined components
+type ComponentFunc[Props IProps] func(props Props) AnyNode
 
 func (c ComponentFunc[Props]) Render(props Props) AnyNode {
 	return c(props)
@@ -27,82 +21,84 @@ func (c ComponentFunc[Props]) Node(props Props, children ...AnyNode) AnyNode {
 	return H[Props](c, props, children...)
 }
 
-type Node[Props any] struct {
-	Component Component[Props]
-	Props     Props
-	Key       *string
-	Children  []AnyNode
-	// Ref       Ref
+// FunctionComponent infers the ComponentFunc from a function that takes a
+// IProps and returns an AnyNode.
+func FunctionComponent[Props IProps](fn ComponentFunc[Props]) ComponentFunc[Props] {
+	return ComponentFunc[Props](fn)
 }
 
-func (n *Node[Props]) key() *string {
-	return n.Key
-}
-
-func (n *Node[Props]) invokeRender() AnyNode {
-	return n.Component.Render(n.Props)
-}
-
-func (n *Node[Props]) component() any {
-	return n.Component
-}
-
-func H[Props any](comp Component[Props], props Props, children ...AnyNode) AnyNode {
-	// if settable, ok := any(props).(ChildrenSetter); ok {
-	// 	settable.SetChildren(children)
-	// }
-
-	node := Node[Props]{
-		Component: comp,
-		Props:     props,
-		Key:       GetKey(props),
-		Children:  children,
-	}
-	return &node
+// HtmlTag - literal HTML tag components
+type HtmlTag struct {
+	TagName   string
+	SelfClose bool
 }
 
 type HTMLProps struct {
+	WithChildren // TODO: HTMLPropsWithoutChildren?
+	WithKey
 	className *string
 	style     *string
 	id        *string
 	onClick   *func()
 }
 
-type HtmlTagComponent struct {
-	TagName       string
-	AllowChildren bool
+func (tag HtmlTag) Render(props HTMLProps) AnyNode {
+	return tag.Node(props)
 }
 
-func (_ HtmlTagComponent) Render(props HTMLProps) AnyNode {
-	return nil
+func (tag HtmlTag) Node(props HTMLProps, children ...AnyNode) AnyNode {
+	return H[HTMLProps](tag, props, children...)
 }
 
-func (tag HtmlTagComponent) Node(props HTMLProps, children ...AnyNode) AnyNode {
-	return &Node[HTMLProps]{
-		Component: tag,
-		Props:     props,
-		Key:       GetKey(props),
-		Children:  children,
+func (tag HtmlTag) StartTag(props HTMLProps) string {
+	var builder strings.Builder
+	builder.WriteRune('<')
+	builder.WriteString(tag.TagName)
+	if props.id != nil {
+		builder.WriteString(fmt.Sprintf(` id="%s"`, *props.id))
 	}
+	if props.className != nil {
+		builder.WriteString(fmt.Sprintf(` class="%s"`, *props.className))
+	}
+	if props.style != nil {
+		builder.WriteString(fmt.Sprintf(` style="%s"`, *props.style))
+	}
+	return builder.String()
 }
 
-var Div = HtmlTagComponent{
-	TagName:       "div",
-	AllowChildren: true,
+func (tag HtmlTag) OpenTag(props HTMLProps) string {
+	return tag.StartTag(props) + ">"
 }
 
-type textComponent struct{}
-type TextProps struct {
-	Text string
+func (tag HtmlTag) CloseTag() string {
+	return fmt.Sprintf("</%s>", tag.TagName)
 }
 
+func (tag HtmlTag) SelfCloseTag(props HTMLProps) string {
+	return tag.StartTag(props) + "/>"
+}
+
+// HTML <div> tag
+var Div = HtmlTag{
+	TagName: "div",
+}
+
+// Text component renders its contents as Text
 var Text = textComponent{}
 
-func (t *textComponent) Render(props TextProps) AnyNode {
-	return nil
+type textComponent struct{}
+
+type TextProps struct {
+	// Inner text of this Text node
+	Text string
+	WithKey
 }
 
-func (t *textComponent) Node(props TextProps, children ...AnyNode) AnyNode {
+func (t textComponent) Render(props TextProps) AnyNode {
+	return t.Node(props)
+}
+
+func (t textComponent) Node(props TextProps, children ...AnyNode) AnyNode {
 	return &Node[TextProps]{
 		Component: t,
 		Props:     props,
@@ -111,22 +107,26 @@ func (t *textComponent) Node(props TextProps, children ...AnyNode) AnyNode {
 	}
 }
 
-func (t *textComponent) F(format string, a ...any) AnyNode {
+func (t textComponent) F(format string, a ...any) AnyNode {
 	return t.Node(
-		TextProps{fmt.Sprintf(format, a...)},
+		TextProps{Text: fmt.Sprintf(format, a...)},
 	)
 }
 
-type fragmentComponent struct{}
-type FragmentProps struct{}
-
+// Fragment only renders its children.
 var Fragment = fragmentComponent{}
 
-func (f *fragmentComponent) Render(props FragmentProps) AnyNode {
-	return nil
+type fragmentComponent struct{}
+type FragmentProps struct {
+	WithChildren
+	WithKey
 }
 
-func (f *fragmentComponent) Node(props FragmentProps, children ...AnyNode) AnyNode {
+func (f fragmentComponent) Render(props FragmentProps) AnyNode {
+	return f.Node(props)
+}
+
+func (f fragmentComponent) Node(props FragmentProps, children ...AnyNode) AnyNode {
 	return &Node[FragmentProps]{
 		Component: f,
 		Props:     props,
@@ -135,6 +135,6 @@ func (f *fragmentComponent) Node(props FragmentProps, children ...AnyNode) AnyNo
 	}
 }
 
-func (f *fragmentComponent) Of(children ...AnyNode) AnyNode {
+func (f fragmentComponent) Of(children ...AnyNode) AnyNode {
 	return f.Node(FragmentProps{}, children...)
 }

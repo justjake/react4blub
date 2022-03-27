@@ -1,21 +1,53 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func main() {
 	var foo = Counter.Node(CounterProps{initial: Some(5)})
-	fmt.Printf("v:%v\nt:%t\nT:%T\n", foo, foo, foo)
+	actual := foo.(*Node[any])
+	fmt.Printf("v:%v\nt:%t\nT:%T\n", actual, actual, actual)
 	fmt.Println(RenderToString(foo))
 }
 
 func RenderToString(node AnyNode) string {
+	var builder strings.Builder
+	root := newRoot(builder, node)
+	root.fiber.updateRendered()
 
+	renderComp := func(renderedNode AnyNode) {
+		switch comp := renderedNode.component().(type) {
+		case nil:
+			return
+		case textComponent:
+			props := node.props().(TextProps)
+			builder.WriteString(props.Text)
+			break
+		case HtmlTag:
+			props := node.props().(HTMLProps)
+			children := node.children()
+			if comp.SelfClose && len(children) == 0 {
+				builder.WriteString(comp.SelfCloseTag(props))
+			} else {
+				builder.WriteString(comp.OpenTag(props))
+				// TODO: render each child to string
+				builder.WriteString(comp.CloseTag())
+			}
+		}
+	}
+
+	renderComp(root.fiber.rendered)
+
+	// root.fiber
+	return builder.String()
 }
 
 type CounterProps struct {
-	MaybeString
 	initial   *int
 	increment *int
+	WithKey
 }
 
 // Sketch
@@ -38,7 +70,6 @@ var Counter = FunctionComponent(func(props CounterProps) AnyNode {
 })
 
 type BoxProps struct {
-	WithChildren
 	HTMLProps
 	Padding int
 }
