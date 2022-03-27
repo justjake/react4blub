@@ -348,7 +348,7 @@ RNode createNode(size_t sizeof_props, const void *given_props, unsigned children
   void *props = malloc(sizeof_props);
   memcpy(props, given_props, sizeof_props);
 
-  RChildren[]
+    RChildren[]
 }
 
 #define COMPONENT_node_args(propType, propArg) \

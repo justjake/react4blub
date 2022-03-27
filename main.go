@@ -1,1 +1,5 @@
-package react4c
+package main
+
+type fiber struct {
+	children []fiber
+}
