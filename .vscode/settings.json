@@ -2,6 +2,9 @@
   "makefile.extensionOutputFolder": "./.vscode",
   "C_Cpp.errorSquiggles": "Enabled",
   "files.associations": {
-    "sqlite3.h": "c"
+    "sqlite3.h": "c",
+    "usefunctionhook.h": "c",
+    "array_list.h": "c",
+    "stdarg.h": "c"
   }
 }
