@@ -1,7 +1,7 @@
 package main
 
 type hook interface {
-	isHook()
+	unmount()
 }
 
 func getOrCreateHook[HookType hook](fiber *fiber, makeHook func() HookType) (instance HookType, found bool) {
@@ -28,7 +28,7 @@ type refHook[T any] struct {
 	ref Ref[T]
 }
 
-func (r *refHook[T]) isHook() {}
+func (r *refHook[T]) unmount() {}
 
 // Create a ref in the current component.
 func UseRef[T any]() *Ref[*T] {
@@ -55,7 +55,7 @@ type memoHook[T any, Dep comparable] struct {
 	prevDeps Dep
 }
 
-func (_ *memoHook[T, Dep]) isHook() {}
+func (*memoHook[T, Dep]) unmount() {}
 
 func UseMemo[T any, Dep comparable](compute func() T, dependencies Dep) T {
 	hook, found := getOrCreateHook(globalState.currentFiber, func() *memoHook[T, Dep] {
@@ -75,15 +75,21 @@ type stateHook[T comparable] struct {
 	fiber   *fiber
 }
 
-func (_ *stateHook[T]) isHook() {}
+func (state *stateHook[T]) unmount() {
+	state.fiber = nil
+}
 
 func (state *stateHook[T]) SetState(nextState T) {
+	if state.fiber == nil {
+		return
+	}
+
 	if state.current == nextState {
 		return
 	}
 
 	state.current = nextState
-	// fiber.schedule()
+	state.fiber.shouldRerender()
 }
 
 func UseState[T comparable](initialState T) (state T, setState func(T)) {

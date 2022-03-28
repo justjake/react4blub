@@ -127,12 +127,7 @@ func (f fragmentComponent) Render(props FragmentProps) AnyNode {
 }
 
 func (f fragmentComponent) Node(props FragmentProps, children ...AnyNode) AnyNode {
-	return &Node[FragmentProps]{
-		Component: f,
-		Props:     props,
-		Key:       GetKey(props),
-		Children:  children,
-	}
+	return H[FragmentProps](f, props, children...)
 }
 
 func (f fragmentComponent) Of(children ...AnyNode) AnyNode {

@@ -45,8 +45,19 @@ func (n *Node[Props]) eachChild(fn func(node AnyNode)) {
 
 // Create a Node
 func H[Props IProps](comp Component[Props], props Props, children ...AnyNode) *Node[Props] {
-	if settable, ok := any(props).(ChildrenSetter); ok {
+	// var s ChildrenSetter
+	// var boxProps BoxProps
+
+	// s = &boxProps
+
+	// _ = any(props).(ChildrenSetter)
+	if settable, ok := any(&props).(ChildrenSetter); ok {
 		settable.SetChildren(children)
+	} else {
+		debug.Printf("H: can't set children on %T: %#v <-x- %v", props, props, children)
+		if _, ok := any(props).(BoxProps); ok {
+			_ = any(props).(ChildrenSetter)
+		}
 	}
 
 	node := Node[Props]{
@@ -55,6 +66,8 @@ func H[Props IProps](comp Component[Props], props Props, children ...AnyNode) *N
 		Key:       GetKey(props),
 		Children:  children,
 	}
+
+	debug.Printf("H: create node <%T key=%v ...%#v>%#v</>", comp, node.key(), node.props(), node.children())
 
 	return &node
 }
