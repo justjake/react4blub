@@ -102,6 +102,16 @@ func UseState[T comparable](initialState T) (state T, setState func(T)) {
 	return hook.current, hook.SetState
 }
 
+func UseStateLazy[T comparable](getInitialState func() T) (state T, setState func(T)) {
+	hook, _ := getOrCreateHook(globalState.currentFiber, func() *stateHook[T] {
+		return &stateHook[T]{
+			current: getInitialState(),
+			fiber:   globalState.currentFiber,
+		}
+	})
+	return hook.current, hook.SetState
+}
+
 func Default[T any](pointer *T, defaultValue T) T {
 	if pointer == nil {
 		return defaultValue
@@ -115,4 +125,51 @@ func Some[T any](value T) *T {
 
 func UseCallback[T any, Deps comparable](fn T, dependencies Deps) T {
 	return UseMemo(func() T { return fn }, dependencies)
+}
+
+type EffectFunc interface {
+	func() | func() func()
+}
+
+type effectHook[T EffectFunc, Deps comparable] struct {
+	pending  *T
+	cleanup  *func()
+	prevDeps Deps
+	// TODO: phase (effect/layoutEffect/...)
+}
+
+func (effect *effectHook[T, Deps]) unmount() {
+	if effect.cleanup != nil {
+		(*effect.cleanup)()
+		effect.cleanup = nil
+	}
+}
+
+func (effect *effectHook[T, Deps]) mount() {
+	if effect.pending != nil {
+		pending := *effect.pending
+		effect.unmount()
+
+		if withCleanup, ok := any(pending).(func() func()); ok {
+			res := withCleanup()
+			effect.cleanup = &res
+		} else {
+			any(pending).(func())()
+		}
+
+		effect.pending = nil
+	}
+}
+
+func UseEffect[T EffectFunc, Deps comparable](fn T, dependencies Deps) {
+	hook, found := getOrCreateHook(globalState.currentFiber, func() *effectHook[T, Deps] {
+		return &effectHook[T, Deps]{
+			pending:  &fn,
+			prevDeps: dependencies,
+		}
+	})
+
+	if !found && dependencies != hook.prevDeps {
+		hook.pending = &fn
+	}
 }

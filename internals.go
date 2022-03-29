@@ -17,10 +17,17 @@ type fiber struct {
 	root   *root
 	parent *fiber
 
+	// Index in the nearest parent DOM node, which may not b `fiber.parent.mounted`
+	startIndex int
+	// Most fibers are 1 element wide. Fragments are N elements wide, so this
+	// should be `N - 1` for fragments.
+	indexOffsetWidth int
+
 	node     AnyNode // Component user resquested we render
 	rendered AnyNode // Subtree of that component
-	mounted  *any
+	mounted  any
 	dirty    bool
+	retain   bool
 
 	children map[string]*fiber
 
@@ -48,6 +55,22 @@ func (f *fiber) findChild(index int, childNode AnyNode) *fiber {
 	}
 	f.children[key] = childFiber
 	return childFiber
+}
+
+func (f *fiber) sweep() {
+	if f.children == nil {
+		return
+	}
+
+	for key, childFiber := range f.children {
+		if !childFiber.retain {
+			debug.Printf("fiber.sweep(): remove unused child %T [%d]", childFiber.node.component(), childFiber.startIndex)
+			childFiber.unmount()
+			delete(f.children, key)
+		} else {
+			childFiber.retain = false
+		}
+	}
 }
 
 // TODO: schedule for re-render

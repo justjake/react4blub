@@ -133,3 +133,56 @@ func (f fragmentComponent) Node(props FragmentProps, children ...AnyNode) AnyNod
 func (f fragmentComponent) Of(children ...AnyNode) AnyNode {
 	return f.Node(FragmentProps{}, children...)
 }
+
+type ComparableProps interface {
+	IProps
+	comparable
+}
+
+type ComparableComponent[Props ComparableProps] interface {
+	Component[Props]
+	comparable
+}
+
+// ComparableMemoComponent will only re-render if its props change.
+// By default components always re-render when a parent component re-renders.
+// TODO: Maybe ComparableMemoComponent should be default?
+type ComparableMemoComponent[Props ComparableProps, Comp ComparableComponent[Props]] struct {
+	comp *Comp
+}
+
+type MemoComponent interface {
+	SameComponent(otherComponent any) bool
+	PropsEqual(prev any, next any) bool
+}
+
+func (m *ComparableMemoComponent[Props, Comp]) Render(props Props) AnyNode {
+	return (*m.comp).Render(props)
+}
+
+func (m *ComparableMemoComponent[Props, Comp]) Node(props Props, children ...AnyNode) AnyNode {
+	return H[Props](m, props, children...)
+}
+
+func Memo[Props ComparableProps, Comp ComparableComponent[Props]](base Comp) *ComparableMemoComponent[Props, Comp] {
+	return &ComparableMemoComponent[Props, Comp]{&base}
+}
+
+func (m *ComparableMemoComponent[Props, Comp]) SameComponent(other any) bool {
+	if comparable, ok := other.(*ComparableMemoComponent[Props, Comp]); ok {
+		return m == comparable
+	}
+	return false
+}
+
+func (*ComparableMemoComponent[Props, Comp]) PropsEqual(prev any, next any) bool {
+	comparablePrev, prevOk := prev.(Props)
+	if !prevOk {
+		return false
+	}
+	comparableNext, nextOk := next.(Props)
+	if !nextOk {
+		return false
+	}
+	return comparablePrev == comparableNext
+}
