@@ -40,6 +40,9 @@ type fiberTemp struct {
 // A fiber hosts an instance of a component instance across multiple renders. It
 // stores component hook state and other information needed to re-render the
 // component.
+//
+// The goal is to implement an extremely-simplified version of React's fiber.
+// https://github.com/facebook/react/blob/2e0d86d22192ff0b13b71b4ad68fea46bf523ef6/packages/react-reconciler/src/ReactInternalTypes.js#L64-L66
 type fiber struct {
 	// Coordination data.
 	root         *root
@@ -63,6 +66,7 @@ type fiber struct {
 	hooks    []hook
 }
 
+// Does this make any sense to have?
 type IFiber[Mounted any, Temp any] fiber
 
 func (f *IFiber[Mounted, Temp]) SetTemp(v Temp) {
@@ -79,6 +83,15 @@ func (f *IFiber[Mounted, Temp]) SetMounted(v Mounted) {
 
 func (f *IFiber[Mounted, Temp]) Mounted() Mounted {
 	return f.mounted.(Mounted)
+}
+
+// Work-in-progress sketch of
+type Renderer2[Instance any] interface {
+	CreateInstance(comp any, props any) Instance
+	// True if this is a leaf component of the renderer.
+	// For example, HTML tag components are "leafs" of the DOM renderer.
+	// See https://github.com/acdlite/react-fiber-architecture#output.
+	IsHostComponent(comp AnyNode) bool
 }
 
 func (f *fiber) findChild(index int, childNode AnyNode) (childFiber *fiber, ok bool) {
