@@ -2,6 +2,7 @@ package main
 
 type AnyNode interface {
 	key() *string
+	clearKey() bool
 	props() any
 	invokeRender() AnyNode
 	children() []AnyNode
@@ -19,6 +20,14 @@ type Node[Props IProps] struct {
 
 func (n *Node[Props]) key() *string {
 	return n.Key
+}
+
+func (n *Node[Props]) clearKey() bool {
+	if n.Key == nil {
+		return false
+	}
+	n.Key = nil
+	return true
 }
 
 func (n *Node[Props]) invokeRender() AnyNode {
