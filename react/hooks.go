@@ -1,48 +1,48 @@
-package main
+package react
 
-type hook interface {
-	unmount()
+// Internal interface between a hook instance and internal reconciler machinery
+// for handling state updates.
+type HookCallbacks interface {
+	ShouldRerender()
 }
 
-func getOrCreateHook[HookType hook](fiber *fiber, makeHook func() HookType) (instance HookType, found bool) {
-	var hook HookType
-	found = true
-
-	if len(fiber.hooks) > fiber.nextHook {
-		hook = fiber.hooks[fiber.nextHook].(HookType)
-	} else if fiber.mounted == nil {
-		hook = makeHook()
-		fiber.hooks = append(fiber.hooks, hook)
-		found = false
-	}
-
-	fiber.nextHook++
-	return hook, found
+type HookHost interface {
+	HookCallbacks() HookCallbacks
+	GetOrCreateHook(makeHook func() HookInstance) (instance HookInstance, found bool)
 }
 
-type Ref[T any] struct {
-	Current T
+type HookInstance interface {
+	Unmount()
+}
+
+var currentHookHost HookHost
+
+func getOrCreateHook[HookType HookInstance](hookHost HookHost, makeHook func() HookType) (instance HookType, found bool) {
+	untyped, found := hookHost.GetOrCreateHook(func() HookInstance {
+		return makeHook()
+	})
+	return untyped.(HookType), found
 }
 
 type refHook[T any] struct {
-	ref Ref[T]
+	ref RefStruct[T]
 }
 
-func (r *refHook[T]) unmount() {}
+func (r *refHook[T]) Unmount() {}
 
 // Create a ref in the current component.
-func UseRef[T any]() *Ref[*T] {
-	hook, _ := getOrCreateHook(globalState.currentFiber, func() *refHook[*T] {
+func UseRef[T any]() *RefStruct[*T] {
+	hook, _ := getOrCreateHook(currentHookHost, func() *refHook[*T] {
 		return &refHook[*T]{}
 	})
 	return &hook.ref
 }
 
 // Create a ref with the given initial value.
-func UseRefInitial[T any](initialValue T) *Ref[T] {
-	hook, _ := getOrCreateHook(globalState.currentFiber, func() *refHook[T] {
+func UseRefInitial[T any](initialValue T) *RefStruct[T] {
+	hook, _ := getOrCreateHook(currentHookHost, func() *refHook[T] {
 		return &refHook[T]{
-			ref: Ref[T]{
+			ref: RefStruct[T]{
 				Current: initialValue,
 			},
 		}
@@ -55,10 +55,10 @@ type memoHook[T any, Dep comparable] struct {
 	prevDeps Dep
 }
 
-func (*memoHook[T, Dep]) unmount() {}
+func (*memoHook[T, Dep]) Unmount() {}
 
 func UseMemo[T any, Dep comparable](compute func() T, dependencies Dep) T {
-	hook, found := getOrCreateHook(globalState.currentFiber, func() *memoHook[T, Dep] {
+	hook, found := getOrCreateHook(currentHookHost, func() *memoHook[T, Dep] {
 		return &memoHook[T, Dep]{
 			prev:     compute(),
 			prevDeps: dependencies,
@@ -72,15 +72,15 @@ func UseMemo[T any, Dep comparable](compute func() T, dependencies Dep) T {
 
 type stateHook[T comparable] struct {
 	current T
-	fiber   *fiber
+	handle  HookCallbacks
 }
 
-func (state *stateHook[T]) unmount() {
-	state.fiber = nil
+func (state *stateHook[T]) Unmount() {
+	state.handle = nil
 }
 
 func (state *stateHook[T]) SetState(nextState T) {
-	if state.fiber == nil {
+	if state.handle == nil {
 		return
 	}
 
@@ -89,24 +89,24 @@ func (state *stateHook[T]) SetState(nextState T) {
 	}
 
 	state.current = nextState
-	state.fiber.shouldRerender()
+	state.handle.ShouldRerender()
 }
 
 func UseState[T comparable](initialState T) (state T, setState func(T)) {
-	hook, _ := getOrCreateHook(globalState.currentFiber, func() *stateHook[T] {
+	hook, _ := getOrCreateHook(currentHookHost, func() *stateHook[T] {
 		return &stateHook[T]{
 			current: initialState,
-			fiber:   globalState.currentFiber,
+			handle:  currentHookHost.HookCallbacks(),
 		}
 	})
 	return hook.current, hook.SetState
 }
 
 func UseStateLazy[T comparable](getInitialState func() T) (state T, setState func(T)) {
-	hook, _ := getOrCreateHook(globalState.currentFiber, func() *stateHook[T] {
+	hook, _ := getOrCreateHook(currentHookHost, func() *stateHook[T] {
 		return &stateHook[T]{
 			current: getInitialState(),
-			fiber:   globalState.currentFiber,
+			handle:  currentHookHost.HookCallbacks(),
 		}
 	})
 	return hook.current, hook.SetState
@@ -138,7 +138,7 @@ type effectHook[T EffectFunc, Deps comparable] struct {
 	// TODO: phase (effect/layoutEffect/...)
 }
 
-func (effect *effectHook[T, Deps]) unmount() {
+func (effect *effectHook[T, Deps]) Unmount() {
 	if effect.cleanup != nil {
 		(*effect.cleanup)()
 		effect.cleanup = nil
@@ -148,7 +148,7 @@ func (effect *effectHook[T, Deps]) unmount() {
 func (effect *effectHook[T, Deps]) mount() {
 	if effect.pending != nil {
 		pending := *effect.pending
-		effect.unmount()
+		effect.Unmount()
 
 		if withCleanup, ok := any(pending).(func() func()); ok {
 			res := withCleanup()
@@ -162,7 +162,7 @@ func (effect *effectHook[T, Deps]) mount() {
 }
 
 func UseEffect[T EffectFunc, Deps comparable](fn T, dependencies Deps) {
-	hook, found := getOrCreateHook(globalState.currentFiber, func() *effectHook[T, Deps] {
+	hook, found := getOrCreateHook(currentHookHost, func() *effectHook[T, Deps] {
 		return &effectHook[T, Deps]{
 			pending:  &fn,
 			prevDeps: dependencies,

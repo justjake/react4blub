@@ -1,13 +1,14 @@
-package main
+package react
 
 import (
 	"fmt"
-	"strings"
 )
 
 type Component[Props IProps] interface {
 	Render(Props Props) AnyNode
-	Node(Props Props, children ...AnyNode) AnyNode
+	// Create a Node with this type.
+	// This is for convenience. TODO: remove...
+	// Node(Props Props, children ...AnyNode) AnyNode
 }
 
 // ComponentFunc - user defined components
@@ -18,7 +19,7 @@ func (c ComponentFunc[Props]) Render(props Props) AnyNode {
 }
 
 func (c ComponentFunc[Props]) Node(props Props, children ...AnyNode) AnyNode {
-	return H[Props](c, props, children...)
+	return JSX[Props](c, props, children...)
 }
 
 // FunctionComponent infers the ComponentFunc from a function that takes a
@@ -27,66 +28,20 @@ func FunctionComponent[Props IProps](fn ComponentFunc[Props]) ComponentFunc[Prop
 	return ComponentFunc[Props](fn)
 }
 
-// HtmlTag - literal HTML tag components
-type HtmlTag struct {
-	TagName   string
-	SelfClose bool
-}
-
-type HTMLProps struct {
-	WithChildren // TODO: HTMLPropsWithoutChildren?
-	WithKey
-	className *string
-	style     *string
-	id        *string
-	onClick   *func()
-}
-
-func (tag HtmlTag) Render(props HTMLProps) AnyNode {
-	return tag.Node(props)
-}
-
-func (tag HtmlTag) Node(props HTMLProps, children ...AnyNode) AnyNode {
-	return H[HTMLProps](tag, props, children...)
-}
-
-func (tag HtmlTag) StartTag(props HTMLProps) string {
-	var builder strings.Builder
-	builder.WriteRune('<')
-	builder.WriteString(tag.TagName)
-	if props.id != nil {
-		builder.WriteString(fmt.Sprintf(` id="%s"`, *props.id))
-	}
-	if props.className != nil {
-		builder.WriteString(fmt.Sprintf(` class="%s"`, *props.className))
-	}
-	if props.style != nil {
-		builder.WriteString(fmt.Sprintf(` style="%s"`, *props.style))
-	}
-	return builder.String()
-}
-
-func (tag HtmlTag) OpenTag(props HTMLProps) string {
-	return tag.StartTag(props) + ">"
-}
-
-func (tag HtmlTag) CloseTag() string {
-	return fmt.Sprintf("</%s>", tag.TagName)
-}
-
-func (tag HtmlTag) SelfCloseTag(props HTMLProps) string {
-	return tag.StartTag(props) + "/>"
-}
-
-// HTML <div> tag
-var Div = HtmlTag{
-	TagName: "div",
-}
-
 // Text component renders its contents as Text
-var Text = textComponent{}
+var Text textComponent
 
-type textComponent struct{}
+type textComponent func(string) *Node[TextProps]
+
+func init() {
+	Text = textComponentImpl
+	Fragment = fragmentComponentImpl
+}
+
+func textComponentImpl(s string) *Node[TextProps] {
+	props := TextProps{Text: s}
+	return JSX[TextProps](Text, props)
+}
 
 type TextProps struct {
 	// Inner text of this Text node
@@ -95,28 +50,22 @@ type TextProps struct {
 }
 
 func (t textComponent) Render(props TextProps) AnyNode {
-	return t.Node(props)
-}
-
-func (t textComponent) Node(props TextProps, children ...AnyNode) AnyNode {
-	return &Node[TextProps]{
-		Component: t,
-		Props:     props,
-		Key:       GetKey(props),
-		Children:  nil,
-	}
+	return t(props.Text)
 }
 
 func (t textComponent) F(format string, a ...any) AnyNode {
-	return t.Node(
-		TextProps{Text: fmt.Sprintf(format, a...)},
-	)
+	return t(fmt.Sprintf(format, a...))
 }
 
 // Fragment only renders its children.
-var Fragment = fragmentComponent{}
+var Fragment fragmentComponent
 
-type fragmentComponent struct{}
+type fragmentComponent func(...AnyNode) *Node[FragmentProps]
+
+func fragmentComponentImpl(children ...AnyNode) *Node[FragmentProps] {
+	return JSX[FragmentProps](Fragment, FragmentProps{}, children...)
+}
+
 type FragmentProps struct {
 	WithChildren
 	WithKey
@@ -127,11 +76,7 @@ func (f fragmentComponent) Render(props FragmentProps) AnyNode {
 }
 
 func (f fragmentComponent) Node(props FragmentProps, children ...AnyNode) AnyNode {
-	return H[FragmentProps](f, props, children...)
-}
-
-func (f fragmentComponent) Of(children ...AnyNode) AnyNode {
-	return f.Node(FragmentProps{}, children...)
+	return JSX[FragmentProps](f, props, children...)
 }
 
 type ComparableProps interface {
@@ -161,7 +106,7 @@ func (m *ComparableMemoComponent[Props, Comp]) Render(props Props) AnyNode {
 }
 
 func (m *ComparableMemoComponent[Props, Comp]) Node(props Props, children ...AnyNode) AnyNode {
-	return H[Props](m, props, children...)
+	return JSX[Props](m, props, children...)
 }
 
 func Memo[Props ComparableProps, Comp ComparableComponent[Props]](base Comp) *ComparableMemoComponent[Props, Comp] {

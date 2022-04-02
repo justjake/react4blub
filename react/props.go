@@ -1,7 +1,13 @@
-package main
+package react
 
 type IProps interface {
 	Keyed
+}
+
+// TODO: Should we make children arrays type-safe?
+type IPropsWithChildren interface {
+	IProps
+	HasChildren
 }
 
 type Keyed interface {
@@ -56,4 +62,16 @@ func (c *WithChildren) GetChildren() []AnyNode {
 
 func (c *WithChildren) SetChildren(newChildren []AnyNode) {
 	c.Children = newChildren
+}
+
+type WithRef[T any] struct {
+	Ref Ref[*T]
+}
+
+func (wr *WithRef[T]) GetRef() Ref[*T] {
+	return wr.Ref
+}
+
+type HasRef[T any] interface {
+	GetRef() Ref[T]
 }

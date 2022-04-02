@@ -1,15 +1,56 @@
-package main
+package reconciler
 
 import (
 	"fmt"
-	"log"
-	"os"
+
+	. "github.com/justjake/react4c/react"
+	. "github.com/justjake/react4c/web"
 )
 
-var debug = log.New(os.Stderr, "react", log.LstdFlags|log.Lshortfile)
+type RenderAPI[
+	Props HostProps,
+	Comp ComparableComponent[Props],
+	K HostKind,
+] struct {
+	config HostConfig[Props, Comp, K]
+}
+
+func NewRenderer[
+	Props HostProps,
+	Comp ComparableComponent[Props],
+	K HostKind,
+](config HostConfig[Props, Comp, K]) *RenderAPI[Props, Comp, K] {
+	return &RenderAPI[Props, Comp, K]{config}
+}
+
+// Is this going to save keystrokes or cause pain?
+func (*RenderAPI[Props, Comp, K]) newSwitch() componentKindHandlers[Props, Comp] {
+	return componentKindHandlers[Props, Comp]{}
+}
 
 var globalState struct {
 	currentFiber *fiber
+}
+
+// Initially I started with a fiber-inspired design (React 16+), but it's quite
+// complicated and involved. Instead, we implement a more straightforward
+// stack-based resolver (React 15 and before).
+// https://reactjs.org/docs/implementation-notes.html
+type fiber2[K HostKind] struct {
+	parent *fiber2[K]
+
+	// Internal data layer
+	currentNode    AnyNode     // Spec for this fiber
+	rendered       []fiber2[K] // Result of rendering node
+	publicInstance any         // What "ref" should get
+
+	// Host render layer
+	host             ChildInstance[K] // eg DOM node. Renderer-specific.
+	nearestChildHost ChildInstance[K] // If we don't have a host, set to the first nearestChildHost in children[]
+
+	// Hooks & Effects layer
+	dirty bool
+	hooks *fiberHooks
 }
 
 // Temp data valid only for a single render pass.
@@ -24,7 +65,7 @@ type fiberTemp struct {
 	// a mounted node, it should be inserted into mountedParent's node by the end
 	// of the render.
 	mountedParent *fiber
-	// Index in the nearest parent DOM node, which may not b `fiber.parent.mounted`
+	// Index in the nearest parent DOM node, which may not be `fiber.parent.mounted`
 	startIndex int
 	// Most fibers are 1 element wide. Fragments are N elements wide, so this
 	// should be `N - 1` for fragments.
@@ -62,36 +103,8 @@ type fiber struct {
 	dirty    bool    // If true, this fiber should re-render during next render
 
 	// Hooks
-	nextHook int
-	hooks    []hook
-}
-
-// Does this make any sense to have?
-type IFiber[Mounted any, Temp any] fiber
-
-func (f *IFiber[Mounted, Temp]) SetTemp(v Temp) {
-	f.temp.rendererTemp = v
-}
-
-func (f *IFiber[Mounted, Temp]) Temp() Temp {
-	return f.temp.rendererTemp.(Temp)
-}
-
-func (f *IFiber[Mounted, Temp]) SetMounted(v Mounted) {
-	f.mounted = v
-}
-
-func (f *IFiber[Mounted, Temp]) Mounted() Mounted {
-	return f.mounted.(Mounted)
-}
-
-// Work-in-progress sketch of
-type Renderer2[Instance any] interface {
-	CreateInstance(comp any, props any) Instance
-	// True if this is a leaf component of the renderer.
-	// For example, HTML tag components are "leafs" of the DOM renderer.
-	// See https://github.com/acdlite/react-fiber-architecture#output.
-	IsHostComponent(comp AnyNode) bool
+	// nextHook int
+	// hooks    []hook
 }
 
 func (f *fiber) findChild(index int, childNode AnyNode) (childFiber *fiber, ok bool) {
@@ -122,7 +135,7 @@ func (f *fiber) sweep() {
 
 	for key, childFiber := range f.children {
 		if !childFiber.temp.alive {
-			debug.Printf("fiber.sweep(): remove unused child %T [%d]", childFiber.node.component(), childFiber.temp.startIndex)
+			Logger.Printf("fiber.sweep(): remove unused child %T [%d]", childFiber.node.component(), childFiber.temp.startIndex)
 			childFiber.unmount()
 			delete(f.children, key)
 		}
@@ -175,15 +188,18 @@ func newRoot(host any, node AnyNode) *root {
 	return &root
 }
 
-type componentKindHandlers struct {
+type componentKindHandlers[
+	Props HostProps,
+	Comp ComparableComponent[Props],
+] struct {
 	Nil      func()
 	Fragment func(FragmentProps)
 	Text     func(TextProps)
-	HTML     func(HtmlTag, HTMLProps)
+	Host     func(Comp, Props)
 	Other    func(AnyNode)
 }
 
-func (ops componentKindHandlers) Perform(node AnyNode) {
+func (ops componentKindHandlers[Props, Comp]) Perform(node AnyNode) {
 	comp := node.component()
 	props := node.props()
 
@@ -203,9 +219,9 @@ func (ops componentKindHandlers) Perform(node AnyNode) {
 			ops.Text(props.(TextProps))
 			return
 		}
-	case HtmlTag:
-		if ops.HTML != nil {
-			ops.HTML(comp, props.(HTMLProps))
+	case Comp:
+		if ops.Host != nil {
+			ops.Host(comp, props.(Props))
 			return
 		}
 	}
@@ -348,7 +364,7 @@ func renderChildren(ancestor *fiber, children []AnyNode, renderer Renderer) {
 	ancestor.sweep() // Sweep
 	if ancestor.mounted == nil {
 		ancestor.temp.indexOffsetWidth = widthOffset
-		debug.Printf("renderChildren: %T with indexOffsetWidth %d", ancestor.node.component(), ancestorIndexOffset)
+		Logger.Printf("renderChildren: %T with indexOffsetWidth %d", ancestor.node.component(), ancestorIndexOffset)
 	}
 }
 
